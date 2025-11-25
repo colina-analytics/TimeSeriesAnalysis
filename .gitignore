@@ -13,3 +13,6 @@ build/
 *.swp
 *.swo
 *~
+
+
+.timeSeries_venv/
