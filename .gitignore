@@ -16,3 +16,4 @@ build/
 
 
 .timeSeries_venv/
+.time_series_venv/
