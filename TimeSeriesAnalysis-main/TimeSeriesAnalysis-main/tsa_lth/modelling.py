@@ -1028,10 +1028,10 @@ def estimateARMA(y, A=0, C=0, diff=None, A_free=None, C_free=None, titleStr='', 
     if ordA == 0 and ordC == 0:
         if plot:
             if diff is None:
-                plotACFnPACF(y, titleStr=titleStr, noLags=noLags, includeZeroLag=True)
+                plotACFnPACF(y, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
             else:
                 yplot = difference(y, diff, remove=True)
-                plotACFnPACF(yplot, titleStr=titleStr, noLags=noLags, includeZeroLag=True)
+                plotACFnPACF(yplot, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
         return
     
     if not isinstance(A, int): A_free = np.array(A).astype(bool)
