@@ -472,7 +472,7 @@ def predict_model(foundModel, inputModel1, inputModel2,  x1, x2, y, k, buffer=20
 
 
 buffer = 200
-k = 7
+k = 1
 
 # Validation 1
 val_n_weeks = 2
@@ -631,6 +631,50 @@ def solutionB(payload):
 
     return yhat[test_idx].tolist()
 
+
+def server_style_test_with_naive(start, end, k):
+    df = load_project_df()
+
+    payload = {
+        "data": df.values,
+        "k_steps": k,
+        "start_idx": start,
+        "end_idx": end
+    }
+
+    yhat = np.array(solutionB(payload))
+    y = df['power_MJ_s'].values[start-1:end]
+
+    season = None if k == 1 else 24
+    y_naive, _, _ = naive_pred(
+        data=df['power_MJ_s'].values,
+        test_data_ind=range(start-1, end),
+        k=k,
+        season_k=season
+    )
+
+    # ⬅️ DO NOT SLICE y_naive AGAIN
+
+    mse_model = np.mean((y - yhat)**2)
+    mse_naive = np.mean((y - y_naive)**2)
+
+    return mse_model, mse_naive
+
+df_raw = load_project_df()
+
+fig, ax = plt.subplots()
+ax.plot(df_raw['power_MJ_s'].values)
+
+for k in [1, 7]:
+    print(f"\n==== k={k} ====")
+    for s, e in [(2900,3068),(4700,4868),(1000,1168)]:
+        m, n = server_style_test_with_naive(s, e, k)
+        print(f"[{s},{e}]  model={m:.3f}  naive={n:.3f}")
+        ax.axvline(s, color='red', linestyle='--')
+        ax.axvline(e, color='red', linestyle='--')
+        
+        
+        
 
 
 
