@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     # %% SELECT MODELING DATASET - Same as Part A
 
-    start = 0
+    start = 1500 - 4*168   
     n_weeks = 10
     end = start + 168 * n_weeks - 1
     n = end - start + 1
