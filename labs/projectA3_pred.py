@@ -277,17 +277,8 @@ eps_t_model = estimateARMA(
 # %% CREATE BJ-MODEL
 
 
-# A1_free = np.array([1, 1, 1, 0,0,0,0,1, *np.zeros(15), 0, 1, 1]) * 0.3
-# C1_free = np.array([1, 1, 0, 0, 1, *np.zeros(23), 0])       * 0.3    # white MA
-
-
-# A_free = [1, 1, 0, 0, 0, *np.zeros(19), 1, *np.zeros(8), 0]
-# C_free = [1, 1, 0, 0, *np.zeros(8), 1, 0, 0, *np.zeros(0), 0]
-
-
+"""
 d, r, s = 1, 1, 1
-
-
 # From input
 B_free = np.array([0] * d + [1] + [1] * s) * 0.8
 A2_free = np.array([1] + [1] * r) * 0.8
@@ -295,12 +286,15 @@ A2_free = np.array([1] + [1] * r) * 0.8
 # From eps_t
 A1_free = [1, 1, 0, 0, 0, *np.zeros(19), 1, *np.zeros(8), 0]
 C1_free = [1, 1, 0, 0, *np.zeros(8), 1, 0, 0, *np.zeros(0), 0]
+"""
+
 
 # Trial
-A1_free = [1, 1, 0, *np.zeros(21), 1, 1, 1]
-C1_free = [1, 1, 1, 0, *np.zeros(8), 1, 1, 0, *np.zeros(8), 1]
+A1_free = [1, 1, 0, *np.zeros(21), 1, 0, 0]
+C1_free = [1, 1, 1, 0, *np.zeros(8), 0, 0, 0, *np.zeros(8), 1]
 
-# A1_free = A1_free + list(np.zeros(168 - len(A1_free))) + [1]
+A1_free = A1_free + list(np.zeros(72 - len(A1_free))) + [1]
+A1_free = A1_free + list(np.zeros(168 - len(A1_free))) + [1, 0, 0]
 # C1_free = C1_free + list(np.zeros(167 - len(C1_free))) + [1, 1]
 
 
@@ -351,20 +345,44 @@ print("Frac explained by input:", 1 - var_res/var_y)
 
 
 
-# %% VALIDATE  MODEL
+#%% VALIDATE AND TEST MODEL
 
-v_start = start_model + weeks_model * h
 
-start_indexes = [v_start, v_start + 3*h, len(df) - 200]
-n_weeks = [3, 1, 1]
+from myproject_utils import test_single_input_model
+
 
 for k in [1, 7]:
-    print(f"------------ Prediction for K = {k} -------------")
-    for start_index, n in zip(start_indexes, n_weeks):
-        test_model(df, k=k, start_index=start_index, n_weeks=n,
-                   BJmodel=bjModel, inputModel=input_model, buffer=200, plot=True)
-
-
+    print(f'------ K = {k} ------')
+    for name, start_index, end_index in windows:
+        if name == "Modeling":
+            continue
+    
+        y_real, yhatk, dates = test_single_input_model(
+            df,
+            bjModel,
+            input_model,
+            k,
+            start_index,
+            end_index,
+            buffer=200,
+        )
+        print('--' * 20)
+        
+        fig, ax = plt.subplots(figsize=[10,4])
+        ax.set_title(name)
+        ax.set_ylabel('Power (MJ/s)')
+        ax.plot(dates, y_real, label='Data')
+        ax.plot(dates, yhatk, label=f'{k}-step Prediction')
+        plt.xticks(rotation=20)
+        ax.legend()
+        
+        
+        if k == 1:
+            ehat = y_real - yhatk
+            plotACFnPACF(ehat, noLags=100)
+            whiteness_test(ehat)
+        
+        
 
 #%% CODE FOR SERVER
 

@@ -35,8 +35,24 @@ x1 = df['ambient_temp_C'].values
 x2 = df['supply_temp_C'].values
 y  = df['power_MJ_s'].values
 
+
+start_model = 1500 - 4*168          # your Part B start (0)
+weeks_model = 10     # your Part B weeks (10)
+h = 168
+
+n_total = len(df)
+
+windows = [
+    ("Modeling",    start_model,                 start_model + weeks_model*h),
+    ("Validation",  start_model + weeks_model*h, start_model + (weeks_model+3)*h),
+    ("Test 1",      start_model + (weeks_model+3)*h, start_model + (weeks_model+4)*h),
+    ("Test 2",      3555,               3755),
+]
+
+
 #%% Load Part B model
-MODEL_ID = 45
+
+MODEL_ID = 169
 data = load_grid_search_results('grid_search_results.json')
 config = get_model_config(MODEL_ID, data['configs'])
 print_model_config(config)
@@ -48,48 +64,77 @@ KA, KB1, KB2, KC = extract_bj_polys(foundModel)
 desc = kalman_descriptor(foundModel)
 
 
-if True:
-    # Remove MA lag 24 from Kalman state
-    desc = [d for d in desc if not (d[0] == "e" and d[1] == 24)]
-    KC[24] = 0.0
+if False:
+    # Remove MA lag 23 from Kalman state
+    desc = [d for d in desc if not (d[0] == "e" and d[1] == 23)]
+    KC[23] = 0.0
     
     # Remove AR(24)
     desc = [d for d in desc if not (d[0] == "y" and d[1] == 24)]
     KA[24] = 0.0
     
-    # Remove AR(2)
-    # desc = [d for d in desc if not (d[0] == "y" and d[1] == 2)]
-    # KA[2] = 0.0
+    # Remove AR(168)
+    desc = [d for d in desc if not (d[0] == "y" and d[1] == 168)]
+    KA[168] = 0.0
     
-    # Remove delay on input 1
-    desc = [d for d in desc if not (d[0] == "x1" and d[1] == 1)]
-    KB1[1] = 0.0
+    # Remove AR(169)
+    desc = [d for d in desc if not (d[0] == "y" and d[1] == 169)]
+    KA[169] = 0.0
+    
+    # Remove AR(72)
+    desc = [d for d in desc if not (d[0] == "y" and d[1] == 72)]
+    KA[72] = 0.0
+    
+    # Remove on input 1
+    desc = [d for d in desc if not (d[0] == "x1" and d[1] == 2)]
+    KB1[2] = 0.0
     
     # Remove input 1
-    # desc = [d for d in desc if not (d[0] == "x1" and d[1] == 0)]
-    # KB1[0] = 0.0
+    desc = [d for d in desc if not (d[0] == "x1" and d[1] == 3)]
+    KB1[3] = 0.0
     
-    # Remove dealy on input 2
-    # desc = [d for d in desc if not (d[0] == "x2" and d[1] == 0)]
-    # KB2[1] = 0.0
+
+if True:
+    # Remove AR(169)
+    desc = [d for d in desc if not (d[0] == "y" and d[1] == 169)]
+    KA[169] = 0.0
+    
+    # Remove MA lag 23 from Kalman state
+    desc = [d for d in desc if not (d[0] == "e" and d[1] == 23)]
+    KC[23] = 0.0
+    
+    # Remove AR(72)
+    desc = [d for d in desc if not (d[0] == "y" and d[1] == 72)]
+    KA[72] = 0.0
+    
+    # Remove input 1
+    desc = [d for d in desc if not (d[0] == "x1" and d[1] == 3)]
+    KB1[3] = 0.0
+    
+    # Remove input 1
+    desc = [d for d in desc if not (d[0] == "x1" and d[1] == 2)]
+    KB1[2] = 0.0
 
 
 
 eP = np.asarray(foundModel.resid)
 
 #%% Kalman setup
+
+from tsa_lth.analysis import plotACFnPACF
+from tsa_lth.tests import whiteness_test
+
 N = len(y)
-k = 7
+k = 1
 buffer = 200
 run_start = max(25, buffer)
 
 xt, Rx_t1 = init_kalman_state(desc, KA, KB1, KB2, KC, run_start, N)
 
 A  = np.eye(len(desc))
-Rw = np.std(eP)
+Rw = 1
 Re = 1e-6 * np.eye(len(desc))
 
-#%% Run Kalman
 yhat_k, h_et, xStd = run_kalman(
     y, x1, x2,
     desc,
@@ -99,45 +144,47 @@ yhat_k, h_et, xStd = run_kalman(
     run_start=run_start
 )
 
-#%% Evaluation (ALIGNED k-step)
 
-val_start = 3200
-val_end = val_start + 2*168
-test_idx = np.arange(val_start, val_end)
+# Test indexes [2900, 3068; 4700, 4868; 1000, 1168]
 
 
-if True:
-    m = k  # alignment shift (k-step)
+import matplotlib.pyplot as plt
+
+window = windows[1]
+for window in windows:
+    val_start = window[1]
+    val_end = window[2]
+    # val_start = 2900
+    # val_end = 3068
+    test_idx = np.arange(val_start, val_end)
+    dates = df['date'][test_idx].values
     
-    # Align predictions and truth
-    yhat_k_aligned = yhat_k[m:]
-    y_aligned = y[:-m]
     
-    # Align test indices
-    test_idx_aligned = test_idx[test_idx < len(y_aligned)]
+    # MSE evaluation
+    mse_k, mse_naive, _ = evaluate_prediction(
+        y,
+        yhat_k,
+        test_idx,
+        k
+    )
     
-if False:
-    y_aligned = y
-    yhat_k_aligned = yhat_k
-    test_idx_aligned = test_idx
+    print(f"k={k}  Kalman (aligned)={mse_k:.3f}  Naive={mse_naive:.3f}")
+    
+    plt.figure(figsize=(10,5))
+    plt.plot(dates, y[test_idx], label='Real')
+    plt.plot(dates, yhat_k[test_idx], label='Kalman')
+    plt.title('')
+    plt.legend()
+    # plt.grid(True)
+    plt.ylabel('Power (MJ/s)')
+    plt.show()
+    
+    if k == 1:
+        ehat = y[test_idx] - yhat_k[test_idx]
+        plotACFnPACF(ehat, noLags=100, titleStr=window[0])
+        whiteness_test(ehat)
 
-# MSE evaluation
-mse_k, mse_naive, _ = evaluate_prediction(
-    y_aligned,
-    yhat_k_aligned,
-    test_idx_aligned,
-    k
-)
-
-print(f"k={k}  Kalman (aligned)={mse_k:.3f}  Naive={mse_naive:.3f}")
-
-# Plot aligned prediction
-plot_predictions(
-    y_aligned,
-    yhat_k_aligned,
-    test_idx_aligned,
-    f"{k}-step Kalman prediction (aligned)"
-)
+#%%
 
 # Parameter evolution (unchanged)
 plot_parameter_evolution(
@@ -145,5 +192,5 @@ plot_parameter_evolution(
     baseline_params=None,
     param_names=[f"{v}(t-{l})" for v, l in desc],
     startInd=run_start,
-    title="Recursive Kalman parameters"
+    title=""
 )

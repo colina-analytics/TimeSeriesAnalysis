@@ -68,7 +68,7 @@ windows = [
     ("Modeling",    start_model,                 start_model + weeks_model*h),
     ("Validation",  start_model + weeks_model*h, start_model + (weeks_model+3)*h),
     ("Test 1",      start_model + (weeks_model+3)*h, start_model + (weeks_model+4)*h),
-    ("Test 2",      3500,               3500+168),
+    ("Test 2",      3555,               3755),
 ]
 
 colors = {
@@ -259,6 +259,56 @@ print('WARNING! Setting input_model.A as convolved with diff!')
 inputModel1.A = np.convolve([1, -1], inputModel1.A)
 
 
+#%% PREDICTING INPUT 1
+
+# Get full data
+x1_full = df['ambient_temp_C'].values
+
+# Predict Input
+k = 1
+print(f'k = {k}')
+Fx1, Gx1 = polydiv(inputModel1.C, inputModel1.A, k)
+x1hatk = signal.lfilter(Gx1, inputModel1.C, x1_full)
+x1_resid = x1_full - x1hatk
+
+# Naive prediction
+season = None if k == 1 else 24
+x1_naive, x1_var_naive, x1_ehat_naive = naive_pred(data=x1_full, test_data_ind=np.arange(0, len(x1_full)), k=k, season_k=season)
+
+
+# Window
+window = windows[3]
+name, start_index, end_index = window
+x1hatk = x1hatk[start_index:end_index]
+x1_naive = x1_naive[start_index:end_index]
+dates = df[start_index:end_index]['date']
+
+x1_resid = x1_resid[start_index:end_index]
+x1_ehat_naive = x1_ehat_naive[start_index:end_index]
+
+
+# Plotting
+fig, ax = plt.subplots(figsize=[10, 4])
+ax.set_ylabel('Temperature (C)')
+ax.plot(dates, x1_full[start_index:end_index], label='Data', alpha=0.7)
+ax.plot(dates, x1hatk, label='Prediction', alpha=0.7)
+# ax.plot(dates, x1_naive, label='Naive Prediction')
+ax.legend()
+
+
+# Comaprison
+print('Window:', name)
+model_mse = np.mean(x1_resid**2)
+naive_mse = np.mean(x1_ehat_naive**2)
+print('model_mse:', round(model_mse, 3))
+print('naive_mse:', round(naive_mse, 3))
+
+
+# Whiteness
+if k == 1 :
+    plotACFnPACF(x1_resid, titleStr=f'{name} {k}-step Prediction Residual for x_1', noLags=100)
+    whiteness_test(x1_resid)
+
 # %% ========== INPUT 2 MODEL (Supply Water Temperature) ==========
 # This is NEW for Part B - we need to analyze and model x2
 
@@ -281,37 +331,56 @@ inputModel2 = estimateARMA(
     noLags=60
 )
 
+#%% PREDICTING INPUT 2
 
-#%%
+# Get full data
+x2_full = df['supply_temp_C'].values
 
-# Predicting and plotting
+# Predict Input
 k = 7
-print(f'Predictions for x2 with k={k}')
-
+print(f'k = {k}')
 Fx2, Gx2 = polydiv(inputModel2.C, inputModel2.A, k)
-xhatk2 = signal.lfilter(Gx2, inputModel2.C, x2)
+x2hatk = signal.lfilter(Gx2, inputModel2.C, x2_full)
+x2_resid = x2_full - x2hatk
 
-rmv = max(len(inputModel2.A), len(inputModel2.C))  # Proper burn-in
+# Naive prediction
+season = None if k == 1 else 24
+x2_naive, x2_var_naive, x2_ehat_naive = naive_pred(data=x2_full, test_data_ind=np.arange(0, len(x2_full)), k=k, season_k=season)
 
-fig, ax = plt.subplots()
-ax.plot(x2[rmv:], label='data')
-ax.plot(xhatk2[rmv:], label='prediction')
+
+# Window
+window = windows[3]
+name, start_index, end_index = window
+x2hatk = x2hatk[start_index:end_index]
+x2_naive = x2_naive[start_index:end_index]
+dates = df[start_index:end_index]['date']
+
+x2_resid = x2_resid[start_index:end_index]
+x2_ehat_naive = x2_ehat_naive[start_index:end_index]
+
+
+# Plotting
+fig, ax = plt.subplots(figsize=[10, 4])
+ax.set_ylabel('Temperature (C)')
+ax.plot(dates, x2_full[start_index:end_index], label='Data', alpha=0.7)
+ax.plot(dates, x2hatk, label='Prediction', alpha=0.7)
+ax.plot(dates, x2_naive, label='Naive Prediction', alpha=0.2)
 ax.legend()
-ax.set_title(f'{k}-step prediction of x2')
-plt.show()
 
-# Model prediction residual
-res_model_x2 = x2[rmv:] - xhatk2[rmv:]
-mse_model_x2 = np.mean(res_model_x2**2)
 
-# Naive
-naive_pred_x2 = x2[rmv-k:-k]
-res_naive_x2 = x2[rmv:] - naive_pred_x2
-mse_naive_x2 = np.mean(res_naive_x2**2)
+# Comaprison
+print('Window:', name)
+model_mse = np.mean(x2_resid**2)
+naive_mse = np.mean(x2_ehat_naive**2)
+print('model_mse:', round(model_mse, 3))
+print('naive_mse:', round(naive_mse, 3))
 
-print(f'Naive MSE: {mse_naive_x2:.4f}')
-print(f'Model MSE: {mse_model_x2:.4f}')
-print('SUCCESS!' if mse_model_x1 < mse_naive_x1 else 'FAIL!')
+
+# Whiteness
+if k == 1 :
+    plotACFnPACF(x2_resid, titleStr=f'{name} {k}-step Prediction Residual for x_2', noLags=100)
+    whiteness_test(x2_resid)
+    pass
 
 
 # %% ========== CCF ANALYSIS FOR INPUT 1 (Ambient Temperature) ==========
@@ -404,7 +473,10 @@ results_df = pd.DataFrame(data['results'])
 
 # 2. Find the model you want (e.g., best by FitPercent)
 best_id = results_df.sort_values('FitPercent', ascending=False).iloc[0]['model_id']
-best_id = 81
+best_id = 169
+best_id = 191
+best_id = 178
+
 print(f"Best model by FitPercent: {best_id}")
 
 # 3. Get the configuration and build the |model
@@ -414,7 +486,7 @@ config = get_model_config(best_id, configs)
 # 4. Fit the model
 x_multi = np.column_stack([x1, x2])
 foundModel = build_model_from_config(config, y, x_multi)
-# foundModel.summary()
+foundModel.summary()
 
 
     # %% VALIDATION / TEST RUNS (PART B) — driven by "windows"
@@ -439,76 +511,65 @@ for name, s, e in windows:
         continue
 
     print(f"{'='*30} {name}  (k={k}) {'='*30}")
+    indexes = [s, e]
     val_x1, val_x2, val_y = slice_block(df, s, e, buffer)
-    predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, k=k)
+    _ = predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, indexes=indexes, k=k)
+
+
+
+#%%
+
+from myproject_utils import test_double_input_model
+
+
+for k in [1, 7]:
+    print(f'------ K = {k} ------')
+    for name, start_index, end_index in windows:
+        if name == "Modeling":
+            continue
+    
+        y_real, yhatk, dates= test_double_input_model(
+            df,
+            foundModel,
+            inputModel1,
+            inputModel2,
+            k,
+            start_index,
+            end_index,
+            buffer=200,
+        )
+        print('--' * 20)
+        
+        fig, ax = plt.subplots(figsize=[10,4])
+        ax.set_title(name)
+        ax.set_ylabel('Power (MJ/s)')
+        ax.plot(dates, y_real, label='Data')
+        ax.plot(dates, yhatk, label=f'{k}-step Prediction')
+        plt.xticks(rotation=20)
+        ax.legend()
+        
+        
+        if k == 1:
+            ehat = y_real - yhatk
+            plotACFnPACF(ehat, noLags=100, titleStr=name)
+            whiteness_test(ehat)
+        
+    
 
 
 
 #%% PACKAGE INTO SOLUTION B
 
 
-import numpy as np
-from scipy import signal
-from tsa_lth.modelling import polydiv
-
-
-def solutionB_1(payload):
-    data = np.asarray(payload["data"])
-    k = int(payload["k_steps"])
-    start_idx = int(payload["start_idx"]) - 1
-    end_idx = int(payload["end_idx"])
-
-    # ================= Fixed BJ model (Part B) =================
-    # Input 1 (ambient temp)
-    B1 = np.array([-0.6145, -0.3033, 0.0881])
-    F1 = np.array([1.0, 0.4795])
-
-    # Input 2 (supply temp)
-    B2 = np.array([1.8582, -0.0541])
-    F2 = np.array([1.0])
-
-    # Noise model
-    C = np.zeros(25)
-    C[0]  = 1.0
-    C[1]  = 0.5334
-    C[2]  = 0.2826
-    C[24] = 0.1106
-
-    D = np.zeros(25)
-    D[0]  = 1.0
-    D[1]  = -0.8008
-    D[24] = -0.1981
-
-    # ==========================================================
-    y  = data[:, 1]
-    x1 = data[:, 2]
-    x2 = data[:, 3]
-
-    test_idx = np.arange(start_idx, end_idx)
-
-    # --- Equivalent polynomials ---
-    A_eq = np.convolve(D, np.convolve(F1, F2))
-    B1_eq = np.convolve(D, np.convolve(B1, F2))
-    B2_eq = np.convolve(D, np.convolve(B2, F1))
-    C_eq = np.convolve(C, np.convolve(F1, F2))
-
-    # --- k-step predictor ---
-    Fk, Gk = polydiv(C_eq, A_eq, k)
-    Fh1, Gh1 = polydiv(np.convolve(Fk, B1_eq), C_eq, k)
-    Fh2, Gh2 = polydiv(np.convolve(Fk, B2_eq), C_eq, k)
-
-    yhat = (
-        signal.lfilter(Fh1, [1], x1) +
-        signal.lfilter(Gh1, C_eq, x1) +
-        signal.lfilter(Fh2, [1], x2) +
-        signal.lfilter(Gh2, C_eq, x2) +
-        signal.lfilter(Gk, C_eq, y)
-    )
-
-    return yhat[test_idx].tolist()
 
 
 def solutionB(payload):
+    
+    import numpy as np
+    from scipy import signal
+    from tsa_lth.modelling import polydiv
+
+    
     data = np.asarray(payload["data"])
     k = int(payload["k_steps"])
     start_idx = int(payload["start_idx"]) - 1
@@ -542,6 +603,36 @@ def solutionB(payload):
     x2 = data[:, 3]
 
     test_idx = np.arange(start_idx, end_idx)
+    
+    
+    # Predict input 1
+    nabla = np.array([1.0, -1.0])    
+    C1 = np.array([1.0, -1.5755, 0.3283, 0.3343])    
+    A1 = np.zeros(25)
+    A1[0]  = 1.0
+    A1[1]  = -2.0167
+    A1[2]  = 1.1923
+    A1[3]  = -0.0915
+    A1[13] = 0.0378
+    A1[24] = 0.0166    
+    A1 = np.convolve(nabla, A1)
+    Fx1, Gx1 = polydiv(C1, A1, k)
+    xhatk1 = signal.lfilter(Gx1, C1, x1)
+    
+    
+    # Predict input 2
+    A2 = np.zeros(25)
+    A2[0]  = 1.0
+    A2[1]  = -1.8676
+    A2[2]  = 1.4929
+    A2[3]  = -0.5771
+    A2[9]  = -0.0356
+    A2[24] = -0.0126    
+    C2 = np.array([1.0, -0.9854, 0.5295])
+    
+    Fx2, Gx2 = polydiv(C2, A2, k)
+    xhatk2 = signal.lfilter(Gx2, C2, x2)
+        
 
     # --- Equivalent polynomials ---
     A_eq = np.convolve(D, np.convolve(F1, F2))
@@ -553,11 +644,12 @@ def solutionB(payload):
     Fk, Gk = polydiv(C_eq, A_eq, k)
     Fh1, Gh1 = polydiv(np.convolve(Fk, B1_eq), C_eq, k)
     Fh2, Gh2 = polydiv(np.convolve(Fk, B2_eq), C_eq, k)
+    
 
     yhat = (
-        signal.lfilter(Fh1, [1], x1) +
+        signal.lfilter(Fh1, [1], xhatk1) +
         signal.lfilter(Gh1, C_eq, x1) +
-        signal.lfilter(Fh2, [1], x2) +
+        signal.lfilter(Fh2, [1], xhatk2) +
         signal.lfilter(Gh2, C_eq, x2) +
         signal.lfilter(Gk, C_eq, y)
     )

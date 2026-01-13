@@ -56,28 +56,100 @@ from projectB_gridsearch import (
 df = load_project_df()
 df = data_cleanup(df)
 
-# %% SELECT MODELING DATASET - Same as Part A
+# %% SHOW MODEL / VALIDATION / TEST SPLITS (PART B)
 
-start = 0
-n_weeks = 10
-end = start + 168 * n_weeks - 1
-n = end - start + 1
+start_model = 1500 - 4*168          # your Part B start (0)
+weeks_model = 10     # your Part B weeks (10)
+h = 168
 
-# Get dates for reference
-start_date = df.iloc[start]['date']
-end_date = df.iloc[end]['date']
-print(f'Modeling data from index {start} to {end}, total length {n}')
-print(f'Model start_date: {start_date}, end_date: {end_date}')
+n_total = len(df)
+
+windows = [
+    ("Modeling",    start_model,                 start_model + weeks_model*h),
+    ("Validation",  start_model + weeks_model*h, start_model + (weeks_model+3)*h),
+    ("Test 1",      start_model + (weeks_model+3)*h, start_model + (weeks_model+4)*h),
+    ("Test 2",      3500,               3500+168),
+]
+
+colors = {
+    "Modeling":   "tab:blue",
+    "Validation": "tab:orange",
+    "Test 1":     "tab:green",
+    "Test 2":     "tab:red",
+}
+
+def clamp(a, lo, hi):
+    return max(lo, min(a, hi))
+
+# --- full-series overview with shaded windows ---
+fig, ax = plt.subplots(figsize=(12, 5))
+ax.plot(df["date"], df["power_MJ_s"], linewidth=1)
+
+ymin, ymax = ax.get_ylim()
+for name, s, e in windows:
+    s = clamp(s, 0, n_total - 1)
+    e = clamp(e, 1, n_total)
+    if e <= s:
+        continue
+
+    x0 = df["date"].iloc[s]
+    x1 = df["date"].iloc[e - 1]
+
+    ax.axvspan(x0, x1, alpha=0.25, color=colors[name], label=name)
+    ax.text(
+        x0 + (x1 - x0) / 2,
+        ymax - 0.08 * (ymax - ymin),
+        name,
+        ha="center",
+        va="top",
+        fontsize=10,
+    )
+
+ax.set_title("Part B: Power usage with modeling / validation / test splits")
+ax.set_ylabel("Power (MJ/s)")
+ax.tick_params(axis="x", rotation=0)
+ax.legend(loc="upper left", frameon=True)
+plt.tight_layout()
+plt.show()
+
+
+#%%
+# --- quick sanity plots for the modeling window (x1, x2, y) ---
+s0 = start_model
+e0 = start_model + weeks_model*h
+
+fig, ax = plt.subplots(figsize=(10, 3))
+ax.plot(df["date"].iloc[s0:e0], df["ambient_temp_C"].iloc[s0:e0], linewidth=1)
+ax.set_title("Part B: Input x1 (ambient temp) — modeling window")
+ax.set_ylabel("°C")
+plt.tight_layout()
+plt.show()
+
+fig, ax = plt.subplots(figsize=(10, 3))
+ax.plot(df["date"].iloc[s0:e0], df["supply_temp_C"].iloc[s0:e0], linewidth=1)
+ax.set_title("Part B: Input x2 (supply temp) — modeling window")
+ax.set_ylabel("°C")
+plt.tight_layout()
+plt.show()
+
+fig, ax = plt.subplots(figsize=(10, 3))
+ax.plot(df["date"].iloc[s0:e0], df["power_MJ_s"].iloc[s0:e0], linewidth=1)
+ax.set_title("Part B: Output y (power) — modeling window")
+ax.set_ylabel("Power (MJ/s)")
+plt.tight_layout()
+plt.show()
+
+
+
+#%% SELECTING DATA
 
 # Extract all three signals for Part B
-x1 = df['ambient_temp_C'][start:end+1].values    # Input 1: Ambient temperature (same as Part A)
-x2 = df['supply_temp_C'][start:end+1].values  # Input 2: Supply water temperature (NEW)
-# x2 -= np.mean(x2)
-y = df['power_MJ_s'][start:end+1].values         # Output: Power
 
-print(f'x1 (ambient temp) shape: {x1.shape}')
-print(f'x2 (supply temp) shape: {x2.shape}')
-print(f'y (power) shape: {y.shape}')
+# s0 = 0
+# e0 = -2
+x1 = df['ambient_temp_C'][s0:e0+1].values    # Input 1: Ambient temperature (same as Part A)
+x2 = df['supply_temp_C'][s0:e0+1].values  # Input 2: Supply water temperature (NEW)
+y = df['power_MJ_s'][s0:e0+1].values 
 
 
 # %% PLOT ALL THREE SIGNALS
@@ -126,27 +198,15 @@ plt.tight_layout()
 plt.show()
 
 
-# %% SET PARAMETERS
-
-noLags = 200
-pstart = len(y)  # For later prediction split if needed
-
 
 # %% ========== INPUT 1 MODEL (Ambient Temperature) ==========
-# This should be the SAME model as Part A since it's the same data
 
+noLags = 200
 plotACFnPACF(x1, noLags=noLags, titleStr='Input 1: Ambient Temperature (x1)')
 
 
 # %% ARMA MODEL FOR INPUT 1
-# Using the same structure as Part A - adjust if your final Part A model was different
 
-# From your projectA3.py, the input model was:
-# A_free = np.array([1, 1, 1, 1, *np.zeros(8), 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]) * 0.3
-# C_free = np.array([1, 1, 0, 1, *np.zeros(18), 0, 0, 0, 0]) * 0.3
-# with diff=1
-
-# Let's start with this structure - you can adjust based on your final Part A model
 A_free = np.array([1, 1, 1, 1, *np.zeros(8), 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]) * 0.3
 C_free = np.array([1, 1, 1, 1, *np.zeros(18), 0, 0, 0, 0]) * 0.3
 
@@ -161,8 +221,10 @@ inputModel1 = estimateARMA(
     noLags=noLags
 )
 
+
+
 # Predicting and plotting
-k = 7
+k = 1
 print(f'Predictions for x1 with k={k}')
 A1_full = np.convolve([1, -1], inputModel1.A)
 
@@ -182,20 +244,16 @@ plt.show()
 res_model_x1 = x1[rmv:] - xhatk1[rmv:]
 mse_model_x1 = np.mean(res_model_x1**2)
 
-# Naive k-step prediction: x̂(t+k) = x(t), so x̂(t) = x(t-k)
-# For k=1: predict x(t) using x(t-1)
-naive_pred_x1 = x1[rmv-k:-k]  # x(rmv-1), x(rmv), ..., x(n-2)
-res_naive_x1 = x1[rmv:] - naive_pred_x1  # x(rmv) - x(rmv-1), etc.
+# Naive prediction
+naive_pred_x1 = x1[rmv-k:-k]
+res_naive_x1 = x1[rmv:] - naive_pred_x1
 mse_naive_x1 = np.mean(res_naive_x1**2)
 
 print(f'Naive MSE: {mse_naive_x1:.4f}')
 print(f'Model MSE: {mse_model_x1:.4f}')
 print(f'Improvement: {100*(1 - mse_model_x1/mse_naive_x1):.2f}%')
+print('SUCCESS!' if mse_model_x1 < mse_naive_x1 else 'FAIL!')
 
-if mse_model_x1 < mse_naive_x1:
-    print('SUCCESS!')
-else:
-    print('FAIL!')
 
 print('WARNING! Setting input_model.A as convolved with diff!')
 inputModel1.A = np.convolve([1, -1], inputModel1.A)
@@ -207,23 +265,10 @@ inputModel1.A = np.convolve([1, -1], inputModel1.A)
 plotACFnPACF(x2, noLags=noLags, titleStr='Input 2: Supply Water Temperature (x2)')
 
 
-# %% TODO: ARMA MODEL FOR INPUT 2
-# After analyzing ACF/PACF of x2, determine appropriate model structure
-# May need differencing if non-stationary (check for slowly decaying ACF)
+# %%  ARMA MODEL FOR INPUT 2
 
-
-plotACFnPACF(x2, noLags=noLags, titleStr='x2')
-
-x2_diff = tsa_filter([1, -1], [1], x2, remove=True)
-plt.plot(x2_diff)
-plt.title('x2 Diff')
-
-plotACFnPACF(x2_diff, noLags=noLags, titleStr='Differenced x2')
-
-# %% Very simple model - ARIMA(1,1,1) or even simpler
-
-A_free = np.array([1, 0, 1, 1, 0, *np.zeros(67), 1]) * 0.3
-C_free = np.array([1, 0, 1, 0, 0]) * 0.3
+A_free = np.array([1, 0, 1, 1, 1, 1, *np.zeros(67), 0]) * 0.3
+C_free = np.array([1, 0, 1, 0, 0, 0, 0]) * 0.3
 
 inputModel2 = estimateARMA(
     x2,
@@ -237,8 +282,10 @@ inputModel2 = estimateARMA(
 )
 
 
+#%%
+
 # Predicting and plotting
-k = 1
+k = 7
 print(f'Predictions for x1 with k={k}')
 A2_full = np.convolve([1, -1], inputModel2.A)
 
@@ -258,10 +305,9 @@ plt.show()
 res_model_x2 = x2[rmv:] - xhatk2[rmv:]
 mse_model_x2 = np.mean(res_model_x2**2)
 
-# Naive k-step prediction: x̂(t+k) = x(t), so x̂(t) = x(t-k)
-# For k=2: predict x(t) using x(t-2)
-naive_pred_x2 = x2[rmv-k:-k]  # x(rmv-2), x(rmv), ..., x(n-2)
-res_naive_x2 = x2[rmv:] - naive_pred_x2  # x(rmv) - x(rmv-2), etc.
+# Naive
+naive_pred_x2 = x2[rmv-k:-k]
+res_naive_x2 = x2[rmv:] - naive_pred_x2
 mse_naive_x2 = np.mean(res_naive_x2**2)
 
 print(f'Naive MSE: {mse_naive_x2:.4f}')
@@ -278,18 +324,13 @@ print('WARNING! Setting input_model.A as convolved with diff!')
 inputModel2.A = np.convolve([1, -1], inputModel2.A)
 
 # %% ========== CCF ANALYSIS FOR INPUT 1 (Ambient Temperature) ==========
-# Pre-whiten x1 and y using inputModel1, then compute CCF
-# IMPORTANT: Since models were estimated with diff=1, we need to include nabla in A
 
-nabla = np.array([1, -1])
-
-# Get polynomials and include differencing
-A1 = np.convolve(inputModel1.A, nabla)  # Full A includes differencing
-C1 = inputModel1.C
 
 # Pre-whiten input 1 and output
-w1_t = tsa_filter(A1, C1, x1, remove=True)  # Pre-whitened x1
-eps1_t = tsa_filter(A1, C1, y, remove=True)  # Pre-whitened y (using x1's model)
+A1 = inputModel1.A
+C1 = inputModel1.C
+w1_t = tsa_filter(A1, C1, x1, remove=True)
+eps1_t = tsa_filter(A1, C1, y, remove=True)
 
 # Check that w1_t is reasonably white
 plotACFnPACF(w1_t, noLags=50, titleStr='w1_t - Pre-whitened Input 1 (Ambient Temp)')
@@ -299,17 +340,16 @@ whiteness_test(w1_t)
 print("\n" + "="*60)
 print("CCF: Pre-whitened x1 (ambient temp) vs Pre-whitened y")
 print("="*60)
-cxy1, lags1 = plot_ccf(w1_t, eps1_t, noLags=60)
+cxy1, lags1 = plot_ccf(w1_t, eps1_t, noLags=60, titleStr='Crosscorrelation between x1 and y')
 
 
 # %% ========== CCF ANALYSIS FOR INPUT 2 (Supply Water Temperature) ==========
-# Pre-whiten x2 and y using inputModel2, then compute CCF
 
-# Get polynomials and include differencing
-A2 = np.convolve(inputModel2.A, nabla)  # Full A includes differencing
-C2 = inputModel2.C
+
 
 # Pre-whiten input 2 and output
+A2 = inputModel2.A
+C2 = inputModel2.C
 w2_t = tsa_filter(A2, C2, x2, remove=True)  # Pre-whitened x2
 eps2_t = tsa_filter(A2, C2, y, remove=True)  # Pre-whitened y (using x2's model)
 
@@ -373,141 +413,43 @@ results_df = pd.DataFrame(data['results'])
 
 # 2. Find the model you want (e.g., best by FitPercent)
 best_id = results_df.sort_values('FitPercent', ascending=False).iloc[0]['model_id']
-best_id = 80
+best_id = 81
 print(f"Best model by FitPercent: {best_id}")
 
-# 3. Get the configuration and build the model
+# 3. Get the configuration and build the |model
 config = get_model_config(best_id, configs)
-print_model_config(config)
+# print_model_config(config)
 
 # 4. Fit the model
 x_multi = np.column_stack([x1, x2])
 foundModel = build_model_from_config(config, y, x_multi)
-foundModel.summary()
+# foundModel.summary()
 
 
-# %% PREDICTING on Modelling data
+    # %% VALIDATION / TEST RUNS (PART B) — driven by "windows"
 
-
-def predict_model(foundModel, inputModel1, inputModel2,  x1, x2, y, k, buffer=200):
-
-    # Get polynomials
-    KA = np.convolve(np.convolve(foundModel.D, foundModel.F[0]), foundModel.F[1])
-    KB = np.convolve(np.convolve(foundModel.D, foundModel.B[0]), foundModel.F[1])
-    KC = np.convolve(np.convolve(foundModel.F[0], foundModel.F[1]), foundModel.C)
-    KD = np.convolve(np.convolve(foundModel.D, foundModel.B[1]), foundModel.F[0])
-    
-    Fy, Gy = polydiv(foundModel.C, foundModel.D, k)
-    Fh1, Gh1 = polydiv(np.convolve(Fy, KB), KC, k)
-    Fh2, Gh2 = polydiv(np.convolve(Fy, KD), KC, k)
-    
-    # Predict the input signals.
-    Fx1, Gx1 = polydiv(inputModel1.C, inputModel1.A, k)
-    xhatk1 = signal.lfilter(Gx1, inputModel1.C, x1)
-    
-    Fx2, Gx2 = polydiv(inputModel2.C, inputModel2.A, k)
-    xhatk2 = signal.lfilter(Gx2, inputModel2.C, x2)
-    
-    
-    # Predict signal
-    yhatk = (signal.lfilter(Fh1, 1, xhatk1) + signal.lfilter(Gh1, KC, x1) +
-             signal.lfilter(Fh2, 1, xhatk2) + signal.lfilter(Gh2, KC, x2) +
-             signal.lfilter(Gy, KC, y))
-    
-    season = None if k == 1 else 24
-    y_naive, var_naive, ehat_naive = naive_pred(data=y, test_data_ind=range(len(y)), k=k, season_k=season)
-    
-
-    
-    # Align
-    # bias = np.mean(y) - np.mean(yhatk)
-    # yhatk += bias
-    rmv = buffer
-    yhatk = yhatk[rmv:]
-    y_filt = y[rmv:]
-    y_naive = y_naive[rmv:]
-    
-    
-    # Residuals
-    ehat_k = y_filt - yhatk
-    
-    mse_model = np.mean(ehat_k**2)
-    mse_naive = np.mean(ehat_naive**2)
-    
-    print(f'mse_model: {mse_model}')
-    print(f'mse_naive: {mse_naive}')
-    
-    if mse_model < mse_naive:
-        print('SUCESS!')
-    else:
-        print('FAIL!')
-        
-    # Plot the resulting predictions
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6))
-    
-    axes[0].plot(x1[buffer:], label='x_1(t)')
-    axes[0].plot(xhatk1[buffer:], label='Predicted data')
-    axes[0].set_title(f'{k}-step predictions of x_1(t)')
-    axes[0].legend(loc='upper left')
-    
-    axes[1].plot(x2[buffer:], label='x_2(t)')
-    axes[1].plot(xhatk2[buffer:], label='Predicted data')
-    axes[1].set_title(f'{k}-step predictions of x_2(t)')
-    axes[1].legend(loc='upper left')
-    
-    plt.tight_layout()
-    plt.show()
-    
-    plt.figure(figsize=(10, 4))
-    plt.plot(y_filt, label='y(t)')
-    plt.plot(yhatk, label='Predicted data')
-    plt.plot(y_naive, label='Naive')
-    plt.title(f'{k}-step predictions of y(t)')
-    plt.legend(loc='upper left')
-    plt.show()
-    
-    
-        
-#%% TEST VALUDATION
+from myproject_utils import predict_model
 
 
 buffer = 200
-k = 1
+k = 7
+h = 168
 
-# Validation 1
-val_n_weeks = 2
-val_start = end - buffer 
-val_end = val_start + 168*val_n_weeks + buffer
-val_x1 = df['ambient_temp_C'][val_start:val_end+1].values    # Input 1: Ambient temperature (same as Part A)
-val_x2 = df['supply_temp_C'][val_start:val_end+1].values  # Input 2: Supply water temperature (NEW)
-val_y = df['power_MJ_s'][val_start:val_end+1].values 
-predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, k=k)
+def slice_block(df, s, e, buffer):
+    s0 = max(0, s - buffer)
+    e0 = min(len(df) - 1, e + buffer - 1)
+    x1 = df["ambient_temp_C"].iloc[s0:e0+1].to_numpy()
+    x2 = df["supply_temp_C"].iloc[s0:e0+1].to_numpy()
+    y  = df["power_MJ_s"].iloc[s0:e0+1].to_numpy()
+    return x1, x2, y
 
+for name, s, e in windows:
+    if name == "Modeling":
+        continue
 
-print('=' * 100)
-
-# Validation 2
-val_n_weeks = 2
-val_start = val_end - buffer 
-val_end = val_start + 168*val_n_weeks + buffer
-val_x1 = df['ambient_temp_C'][val_start:val_end+1].values    # Input 1: Ambient temperature (same as Part A)
-val_x2 = df['supply_temp_C'][val_start:val_end+1].values  # Input 2: Supply water temperature (NEW)
-val_y = df['power_MJ_s'][val_start:val_end+1].values 
-predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, k=k)
-
-
-print('=' * 100)
-
-
-# Test 1 
-val_n_weeks = 1
-# val_start = len(y) - 200
-val_start = 1000 - buffer
-val_end = val_start + 168*val_n_weeks + buffer
-val_x1 = df['ambient_temp_C'][val_start:val_end+1].values    # Input 1: Ambient temperature (same as Part A)
-val_x2 = df['supply_temp_C'][val_start:val_end+1].values  # Input 2: Supply water temperature (NEW)
-val_y = df['power_MJ_s'][val_start:val_end+1].values 
-predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, k=k)
+    print(f"{'='*30} {name}  (k={k}) {'='*30}")
+    val_x1, val_x2, val_y = slice_block(df, s, e, buffer)
+    predict_model(foundModel, inputModel1, inputModel2, val_x1, val_x2, val_y, k=k)
 
 
 

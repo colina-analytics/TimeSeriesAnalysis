@@ -1,50 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from tsa_lth.analysis import naive_pred
-
-
-# ============================================================
-# Part B → Part C bridge
-# ============================================================
-
-def kalman_descriptor(foundModel):
-    """
-    Returns a list of (signal, lag) defining the Kalman state.
-    Uses the free-parameter masks from the underlying model.
-    """
-    model = foundModel.model
-    desc = []
-
-    # AR (D)
-    for lag, free in enumerate(model.D_free):
-        if free and lag > 0:
-            desc.append(("y", lag))
-
-    # B1
-    for lag, free in enumerate(model.B_free[0]):
-        if free:
-            desc.append(("x1", lag))
-
-    # B2
-    for lag, free in enumerate(model.B_free[1]):
-        if free:
-            desc.append(("x2", lag))
-
-    # MA (C)
-    for lag, free in enumerate(model.C_free):
-        if free and lag > 0:
-            desc.append(("e", lag))
-
-    return desc
-
-
-
-def extract_bj_polys(foundModel):
-    KA  = np.asarray(foundModel.D).ravel()
-    KC  = np.asarray(foundModel.C).ravel()
-    KB1 = np.asarray(foundModel.B[0]).ravel()
-    KB2 = np.asarray(foundModel.B[1]).ravel()
-    return KA, KB1, KB2, KC
+from scipy import signal
+from tsa_lth.modelling import polydiv
 
 
 def init_kalman_state(desc, KA, KB1, KB2, KC, run_start, N):
@@ -82,12 +38,8 @@ def build_C_vector(desc, y, x1, x2, h_et, t):
             C.append(h_et[t-lag])
     return np.array(C)[None, :]
 
-# ============================================================
-# Kalman filter + k-step prediction
-# ============================================================
 
-from scipy import signal
-from tsa_lth.modelling import polydiv
+
 
 def precompute_input_preds(x1, x2, k):
     # --- x1 ---
@@ -195,55 +147,6 @@ def run_kalman(
 
 
 
-
-# ============================================================
-# Evaluation & plotting
-# ============================================================
-
-def evaluate_prediction(y, yhat, test_idx, k):
-    model_mse = np.mean((y[test_idx] - yhat[test_idx])**2)
-
-    y_naive, _, _ = naive_pred(
-        data=y,
-        test_data_ind=test_idx,
-        k=k,
-        season_k=24 if k > 1 else None
-    )
-
-    naive_mse = np.mean((y[test_idx] - y_naive)**2)
-
-    return model_mse, naive_mse, y_naive
-
-
-def plot_predictions(y, yhat, test_idx, title):
-    plt.figure(figsize=(10,5))
-    plt.plot(y[test_idx], label='Real')
-    plt.plot(yhat[test_idx], label='Kalman')
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-
-def plot_parameters(xt, xStd, baseline, startInd, names):
-    t = np.arange(xt.shape[1])
-    fig, axes = plt.subplots(len(names), 1, figsize=(10, 2.2*len(names)), sharex=True)
-
-    for i, ax in enumerate(axes):
-        ax.plot(t, xt[i])
-        ax.fill_between(t, xt[i]-xStd[i], xt[i]+xStd[i], alpha=0.3)
-        ax.axhline(baseline[i], ls='--', c='k')
-        ax.axvline(startInd, ls=':', c='r')
-        ax.set_ylabel(names[i])
-        ax.grid(True)
-
-    plt.show()
-
-
-# ============================================================
-# Server entry point (FROZEN)
-# ============================================================
-
 def solutionC(payload, buffer=200):
     import numpy as np
 
@@ -343,53 +246,59 @@ def solutionC(payload, buffer=200):
 
 
 
+def solutionC(payload):
 
-def plot_parameter_evolution(
-    xt, xStd,
-    baseline_params,
-    param_names,
-    startInd,
-    title=None
-):
-    """
-    Plot recursive Kalman parameter estimates with ±1σ confidence bands.
-    """
-    import matplotlib.pyplot as plt
-    import numpy as np
+    # Extract Data
+    data = np.asarray(payload["data"])
+    k = int(payload["k_steps"])
+    start_idx = int(payload["start_idx"]) - 1
+    end_idx = int(payload["end_idx"])
+    test_idx = np.arange(start_idx, end_idx)
 
-    noPar, N = xt.shape
-    tgrid = np.arange(N)
+    y = data[:, 1]
+    x1 = data[:, 2]
+    x2 = data[:, 3]
 
-    fig, axes = plt.subplots(noPar, 1, figsize=(10, 2.2 * noPar), sharex=True)
+    # Frozen
+    desc = [
+        ("y", 1),
+        ("y", 24),
+        ("y", 72),
+        ("y", 168),
+        ("y", 169),
+        ("x1", 0),
+        ("x1", 1),
+        ("x1", 2),
+        ("x1", 3),
+        ("x2", 0),
+        ("e", 1),
+        ("e", 2),
+        ("e", 23),
+    ]
 
-    for i, ax in enumerate(axes):
-        ax.plot(tgrid, xt[i], label='Recursive (Kalman)')
-        ax.set_xlim(startInd, N-2)
-        ax.fill_between(
-            tgrid,
-            xt[i] - xStd[i],
-            xt[i] + xStd[i],
-            alpha=0.25,
-            label=r'$\pm 1\sigma$'
-        )
+    KB1 = np.array([-1.27889938, -0.5303092 , -0.11478266,  0.10328068])
+    KB2 = np.array([3.06419525])
+    KC = np.array([1, 0.42302563, 0.18689207] + [0]*20 + [0.10646353])
+    KA = np.array([1, -0.78187552] + [0]*22 + [-0.15897257] + [0]*47 + [-0.03095736] + [0]*95 + [-0.42658113, 0.40030175])
 
-        if baseline_params is not None:
-            ax.axhline(
-                baseline_params[i],
-                color='k',
-                linestyle='--',
-                linewidth=1,
-                label='Fixed BJ baseline'
-            )
+    # Kalman
+    N = len(y)
+    buffer = 200
+    run_start = max(25, buffer)
 
-        ax.axvline(startInd, color='red', linestyle=':', linewidth=1)
-        ax.set_ylabel(param_names[i], fontsize=16)
-        ax.tick_params(axis='y', which='major', labelsize=16)
-        ax.grid(True)
+    xt, Rx_t1 = init_kalman_state(desc, KA, KB1, KB2, KC, run_start, N)
 
-    axes[-1].set_xlabel('Time')
-    if title is not None:
-        fig.suptitle(title)
+    A  = np.eye(len(desc))
+    Rw = 1
+    Re = 1e-6 * np.eye(len(desc))
 
-    plt.tight_layout()
-    plt.show()
+    yhat_k, h_et, xStd = run_kalman(
+        y, x1, x2,
+        desc,
+        xt, Rx_t1,
+        A, Rw, Re,
+        k=k,
+        run_start=run_start
+    )
+
+    return yhat_k[test_idx]

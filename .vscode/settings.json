@@ -2,5 +2,6 @@
     "python.analysis.extraPaths": [
         "${workspaceFolder}",
         "./TimeSeriesAnalysis-main/TimeSeriesAnalysis-main"
-    ]
+    ],
+    "python-envs.pythonProjects": []
 }
